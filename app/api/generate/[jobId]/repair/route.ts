@@ -1,4 +1,5 @@
-// app/api/generate/[jobId]/repair/route.ts
+export const maxDuration = 60; 
+
 import { NextRequest, NextResponse } from "next/server";
 import { getJob, updateStage } from "@/lib/jobs/store";
 import { runRepairEngine } from "@/lib/pipeline/repair/engine";

@@ -1,4 +1,5 @@
-// app/api/generate/route.ts
+export const maxDuration = 60; 
+
 import { NextRequest, NextResponse } from "next/server";
 import type { GenerateRequest, GenerateResponse } from "@/lib/types";
 import { createJob, updateJobStatus, updateStage, emitEvent, getJob } from "@/lib/jobs/store";
@@ -100,6 +101,9 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       return;
     }
 
+    // Small delay to avoid rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    
     // ── Stage 2: Schema Generation ──
     emit("stage_start", "schema_generation", {});
     updateStage(jobId, "schema_generation", {
@@ -171,6 +175,8 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       updateJobStatus(jobId, "failed");
       return;
     }
+    // Small delay to avoid rate limiting
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     // ── Stage 3: AppSpec Generation ──
     emit("stage_start", "appspec_generation", {});

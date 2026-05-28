@@ -1,4 +1,5 @@
-// app/api/generate/[jobId]/route.ts
+export const maxDuration = 60; 
+
 import { NextRequest, NextResponse } from "next/server";
 import { getJob } from "@/lib/jobs/store";
 

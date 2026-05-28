@@ -1,4 +1,5 @@
-// app/api/integrations/route.ts
+export const maxDuration = 60;
+
 import { NextResponse } from "next/server";
 import { getAllIntegrations } from "@/lib/pipeline/integrations/registry";
 
