@@ -56,6 +56,11 @@ Open [http://localhost:3000](http://localhost:3000). Type a prompt and click **G
 
 ## Pipeline Architecture
 
+## Pipeline Architecture
+
+## Pipeline Architecture
+
+```text
 User Prompt (string)
 │
 ▼
