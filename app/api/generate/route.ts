@@ -1,7 +1,7 @@
 // app/api/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import type { GenerateRequest, GenerateResponse } from "@/lib/types";
-import { createJob, updateJobStatus, updateStage, emitEvent } from "@/lib/jobs/store";
+import { createJob, updateJobStatus, updateStage, emitEvent, getJob } from "@/lib/jobs/store";
 import { runIntentExtraction } from "@/lib/pipeline/stages/intent";
 import { runSchemaGeneration } from "@/lib/pipeline/stages/schema";
 import { runAppSpecGeneration } from "@/lib/pipeline/stages/appspec";
@@ -43,10 +43,32 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
         status: "failed",
         completedAt: new Date().toISOString(),
         errors: [{ code: "MISSING_FIELD", field: "intent", message: String(err) }],
+        repairLog: [],
       });
-      emit("stage_failed", "intent_extraction", { error: String(err) });
+      emit("stage_failed", "intent_extraction", {
+        error: String(err),
+        repairLog: [],
+      });
       updateJobStatus(jobId, "failed");
       return;
+    }
+
+    // Run repair if intent validation failed
+    let intentRepairLog: typeof intentResult.validation.errors = [];
+    if (!intentResult.validation.valid) {
+      const repair = await runRepairEngine(
+        "intent_extraction",
+        JSON.stringify(intentResult.intent),
+        intentResult.validation.errors,
+        intentResult.cost.provider,
+        intentResult.cost.model
+      );
+      if (repair.success) {
+        intentResult.intent = repair.value as typeof intentResult.intent;
+        intentResult.validation = { valid: true, errors: [] };
+      }
+      intentRepairLog = intentResult.validation.errors;
+      updateStage(jobId, "intent_extraction", { repairLog: repair.log });
     }
 
     updateStage(jobId, "intent_extraction", {
@@ -56,12 +78,27 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       errors: intentResult.validation.errors,
       cost: intentResult.cost,
     });
+
+    // Gap 1 fix — include repairLog in SSE event
     emit("stage_complete", "intent_extraction", {
       intent: intentResult.intent,
       valid: intentResult.validation.valid,
       retryCount: intentResult.retryCount,
       cost: intentResult.cost,
+      repairLog: intentRepairLog,
+      // Gap 2 fix — include workflowStub count expectation
+      integrationsRequested: intentResult.intent.integrations_requested,
+      expectedWorkflowStubs: intentResult.intent.integrations_requested.length,
     });
+
+    if (!intentResult.validation.valid) {
+      emit("stage_failed", "intent_extraction", {
+        errors: intentResult.validation.errors,
+        repairLog: intentRepairLog,
+      });
+      updateJobStatus(jobId, "failed");
+      return;
+    }
 
     // ── Stage 2: Schema Generation ──
     emit("stage_start", "schema_generation", {});
@@ -80,13 +117,18 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
         status: "failed",
         completedAt: new Date().toISOString(),
         errors: [{ code: "MISSING_FIELD", field: "schema", message: String(err) }],
+        repairLog: [],
       });
-      emit("stage_failed", "schema_generation", { error: String(err) });
+      emit("stage_failed", "schema_generation", {
+        error: String(err),
+        repairLog: [],
+      });
       updateJobStatus(jobId, "failed");
       return;
     }
 
     // Run repair if schema validation failed
+    let schemaRepairLog: ReturnType<typeof Array<unknown>> = [];
     if (!schemaResult.validation.valid) {
       const repair = await runRepairEngine(
         "schema_generation",
@@ -99,6 +141,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
         schemaResult.schema = repair.value as typeof schemaResult.schema;
         schemaResult.validation = { valid: true, errors: [] };
       }
+      schemaRepairLog = repair.log;
       updateStage(jobId, "schema_generation", { repairLog: repair.log });
     }
 
@@ -109,15 +152,22 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       errors: schemaResult.validation.errors,
       cost: schemaResult.cost,
     });
+
+    // Gap 1 fix — include repairLog in SSE event
     emit("stage_complete", "schema_generation", {
       entityCount: schemaResult.schema.entities.length,
+      entities: schemaResult.schema.entities.map((e) => e.name),
       valid: schemaResult.validation.valid,
       retryCount: schemaResult.retryCount,
       cost: schemaResult.cost,
+      repairLog: schemaRepairLog,
     });
 
     if (!schemaResult.validation.valid) {
-      emit("stage_failed", "schema_generation", { errors: schemaResult.validation.errors });
+      emit("stage_failed", "schema_generation", {
+        errors: schemaResult.validation.errors,
+        repairLog: schemaRepairLog,
+      });
       updateJobStatus(jobId, "failed");
       return;
     }
@@ -133,19 +183,27 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
 
     let appSpecResult;
     try {
-      appSpecResult = await runAppSpecGeneration(schemaResult.schema, intentResult.intent);
+      appSpecResult = await runAppSpecGeneration(
+        schemaResult.schema,
+        intentResult.intent
+      );
     } catch (err) {
       updateStage(jobId, "appspec_generation", {
         status: "failed",
         completedAt: new Date().toISOString(),
         errors: [{ code: "MISSING_FIELD", field: "appspec", message: String(err) }],
+        repairLog: [],
       });
-      emit("stage_failed", "appspec_generation", { error: String(err) });
+      emit("stage_failed", "appspec_generation", {
+        error: String(err),
+        repairLog: [],
+      });
       updateJobStatus(jobId, "failed");
       return;
     }
 
     // Run repair if appspec validation failed
+    let appSpecRepairLog: ReturnType<typeof Array<unknown>> = [];
     if (!appSpecResult.validation.valid) {
       const repair = await runRepairEngine(
         "appspec_generation",
@@ -159,6 +217,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
         appSpecResult.appSpec = repair.value as typeof appSpecResult.appSpec;
         appSpecResult.validation = { valid: true, errors: [] };
       }
+      appSpecRepairLog = repair.log;
       updateStage(jobId, "appspec_generation", { repairLog: repair.log });
     }
 
@@ -169,22 +228,94 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       errors: appSpecResult.validation.errors,
       cost: appSpecResult.cost,
     });
+
+    // Gap 1 fix — include repairLog in SSE event
+    // Gap 2 fix — verify workflowStub count matches integrations_requested
+    const requestedIntegrations = intentResult.intent.integrations_requested;
+    const producedStubs = appSpecResult.appSpec?.workflowStubs ?? [];
+    const stubsPerIntegration = requestedIntegrations.map((integration) => ({
+      integration,
+      stubCount: producedStubs.filter((s) => s.integration === integration).length,
+      satisfied: producedStubs.some((s) => s.integration === integration),
+    }));
+    const missingStubs = stubsPerIntegration
+      .filter((s) => !s.satisfied)
+      .map((s) => s.integration);
+
     emit("stage_complete", "appspec_generation", {
       pageCount: appSpecResult.appSpec?.pages?.length ?? 0,
       endpointCount: appSpecResult.appSpec?.apiEndpoints?.length ?? 0,
+      workflowStubCount: producedStubs.length,
       valid: appSpecResult.validation.valid,
       retryCount: appSpecResult.retryCount,
       cost: appSpecResult.cost,
+      repairLog: appSpecRepairLog,
+      // Gap 2 — workflow stub coverage report
+      workflowCoverage: {
+        requestedIntegrations,
+        stubsPerIntegration,
+        missingStubs,
+        coverageComplete: missingStubs.length === 0,
+      },
     });
 
     if (!appSpecResult.validation.valid) {
-      emit("stage_failed", "appspec_generation", { errors: appSpecResult.validation.errors });
+      emit("stage_failed", "appspec_generation", {
+        errors: appSpecResult.validation.errors,
+        repairLog: appSpecRepairLog,
+      });
       updateJobStatus(jobId, "failed");
       return;
     }
 
+    // ── Gap 2 fix — add missing workflowStubs programmatically ──
+    // If any requested integration has no stub, add a default one
+    if (missingStubs.length > 0 && appSpecResult.appSpec) {
+      const firstEntity = schemaResult.schema.entities[0]?.name ?? "Entity";
+
+      for (const integration of missingStubs) {
+        // Map integration to its default action
+        const defaultActions: Record<string, string> = {
+          slack:         "send_channel_message",
+          stripe:        "create_customer",
+          whatsapp:      "send_template_message",
+          gmail:         "send_email",
+          webhook:       "post_payload",
+          notion:        "create_page",
+          airtable:      "create_record",
+          hubspot:       "create_contact",
+          salesforce:    "create_lead",
+          jira:          "create_issue",
+          github:        "create_issue",
+          twilio:        "send_sms",
+          zapier:        "send_webhook",
+          google_sheets: "append_row",
+        };
+
+        const action = defaultActions[integration] ?? "post_payload";
+
+        appSpecResult.appSpec.workflowStubs.push({
+          name: `Notify via ${integration} on ${firstEntity} change`,
+          trigger: {
+            entity: firstEntity,
+            event: "status_changed",
+          },
+          integration,
+          action,
+          payload: [
+            { sourceField: "id",     targetParam: "recordId" },
+            { sourceField: "status", targetParam: "status"   },
+          ],
+        });
+      }
+
+      console.log(
+        `[pipeline] Gap 2 fix: added ${missingStubs.length} missing workflowStubs for: ${missingStubs.join(", ")}`
+      );
+    }
+
     // ── Finalize ──
-    const job = jobs.getJob(jobId);
+    const job = getJob(jobId);
     if (!job) return;
 
     const totalUSD = [
@@ -211,6 +342,8 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       jobId,
       totalCostUSD: job.cost.totalEstimatedUSD,
       totalLatencyMs: job.cost.totalLatencyMs,
+      workflowStubCount: job.appSpec?.workflowStubs?.length ?? 0,
+      integrationsCovered: requestedIntegrations,
     });
 
   } catch (err) {
@@ -222,15 +355,28 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
     const body = await req.json() as GenerateRequest;
-    if (!body.prompt || typeof body.prompt !== "string" || body.prompt.trim().length === 0) {
-      return NextResponse.json({ error: "prompt is required" }, { status: 400 });
+    if (
+      !body.prompt ||
+      typeof body.prompt !== "string" ||
+      body.prompt.trim().length === 0
+    ) {
+      return NextResponse.json(
+        { error: "prompt is required" },
+        { status: 400 }
+      );
     }
 
     const job = createJob(body.prompt.trim());
     runPipeline(job.jobId, job.prompt).catch(console.error);
 
-    return NextResponse.json({ jobId: job.jobId } satisfies GenerateResponse, { status: 202 });
+    return NextResponse.json(
+      { jobId: job.jobId } satisfies GenerateResponse,
+      { status: 202 }
+    );
   } catch {
-    return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
+    return NextResponse.json(
+      { error: "Invalid request body" },
+      { status: 400 }
+    );
   }
 }
