@@ -152,7 +152,7 @@ export const IntegrationHookSchema = z.object({
   actionId: z.string().min(1),
   triggerEntity: z.string().min(1),
   triggerEvent: IntegrationEventSchema,
-  condition: z.string().optional(),
+  condition: z.string().optional().nullable().transform((v) => v ?? ""),
 });
 
 export const WorkflowPayloadFieldSchema = z.object({
@@ -165,7 +165,7 @@ export const WorkflowStubSchema = z.object({
   trigger: z.object({
     entity: z.string().min(1),
     event: IntegrationEventSchema,
-    condition: z.string().optional(),
+    condition: z.string().optional().nullable().transform((v) => v ?? ""),
   }),
   integration: z.string().min(1),
   action: z.string().min(1),

@@ -251,6 +251,10 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       if (!VALID_EVENTS.includes(hook.triggerEvent as string)) {
         hook.triggerEvent = "created";
       }
+      // Ensure condition is always a string, never undefined
+      if (typeof hook.condition !== "string") {
+        hook.condition = "";
+      }
       return hook;
     });
 
@@ -270,6 +274,14 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       if (!Array.isArray(stub.payload)) {
         stub.payload = [];
       }
+      // Fix each payload field
+      stub.payload = (stub.payload as Record<string, unknown>[]).map((p) => ({
+        sourceField: typeof p.sourceField === "string" && p.sourceField.trim().length > 0
+          ? p.sourceField : "id",
+        targetParam: typeof p.targetParam === "string" && p.targetParam.trim().length > 0
+          ? p.targetParam : "recordId",
+      }));
+
       if (!stub.trigger || typeof stub.trigger !== "object") {
         stub.trigger = { entity: firstEntity, event: "created" };
       }
@@ -282,6 +294,10 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       }
       if (!VALID_EVENTS.includes(trigger.event as string)) {
         trigger.event = "created";
+      }
+      // Ensure condition is always a string, never undefined
+      if (typeof trigger.condition !== "string") {
+        trigger.condition = "";
       }
       return stub;
     });
