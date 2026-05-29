@@ -252,17 +252,40 @@ export default function Home() {
       .catch(console.error);
   }, []);
 
-  // Poll job status once complete
+  // Poll job status until complete
   useEffect(() => {
     if (!jobId) return;
+    let attempts = 0;
+    const maxAttempts = 30; // 60 seconds max
+
     const interval = setInterval(async () => {
-      const res = await fetch(`/api/generate/${jobId}`);
-      const data = await res.json() as GenerationJob;
-      if (data.status === "complete" || data.status === "failed") {
-        setJob(data);
-        clearInterval(interval);
+      attempts++;
+      try {
+        const res = await fetch(`/api/generate/${jobId}`);
+        const data = await res.json() as GenerationJob;
+
+        if (data.status === "complete") {
+          // Keep polling until appSpec is actually present
+          if (data.appSpec) {
+            setJob(data);
+            clearInterval(interval);
+          } else if (attempts >= maxAttempts) {
+            // Give up after 60 seconds
+            setJob(data);
+            clearInterval(interval);
+          }
+          // Otherwise keep polling — appSpec not ready yet
+        } else if (data.status === "failed") {
+          setJob(data);
+          clearInterval(interval);
+        } else if (attempts >= maxAttempts) {
+          clearInterval(interval);
+        }
+      } catch (err) {
+        console.error("Poll error:", err);
       }
     }, 2000);
+
     return () => clearInterval(interval);
   }, [jobId]);
 

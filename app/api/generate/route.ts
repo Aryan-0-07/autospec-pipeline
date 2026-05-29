@@ -1,5 +1,4 @@
-export const maxDuration = 60; 
-
+// app/api/generate/route.ts
 import { NextRequest, NextResponse } from "next/server";
 import type { GenerateRequest, GenerateResponse } from "@/lib/types";
 import { createJob, updateJobStatus, updateStage, emitEvent, getJob } from "@/lib/jobs/store";
@@ -7,6 +6,7 @@ import { runIntentExtraction } from "@/lib/pipeline/stages/intent";
 import { runSchemaGeneration } from "@/lib/pipeline/stages/schema";
 import { runAppSpecGeneration } from "@/lib/pipeline/stages/appspec";
 import { runRepairEngine } from "@/lib/pipeline/repair/engine";
+import type { RepairAttempt } from "@/lib/types";
 
 async function runPipeline(jobId: string, prompt: string): Promise<void> {
   const jobs = await import("@/lib/jobs/store");
@@ -55,7 +55,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
     }
 
     // Run repair if intent validation failed
-    let intentRepairLog: typeof intentResult.validation.errors = [];
+    let intentRepairLog: RepairAttempt[] = [];
     if (!intentResult.validation.valid) {
       const repair = await runRepairEngine(
         "intent_extraction",
@@ -68,7 +68,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
         intentResult.intent = repair.value as typeof intentResult.intent;
         intentResult.validation = { valid: true, errors: [] };
       }
-      intentRepairLog = intentResult.validation.errors;
+      intentRepairLog = repair.log;
       updateStage(jobId, "intent_extraction", { repairLog: repair.log });
     }
 
@@ -80,14 +80,12 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       cost: intentResult.cost,
     });
 
-    // Gap 1 fix — include repairLog in SSE event
     emit("stage_complete", "intent_extraction", {
       intent: intentResult.intent,
       valid: intentResult.validation.valid,
       retryCount: intentResult.retryCount,
       cost: intentResult.cost,
       repairLog: intentRepairLog,
-      // Gap 2 fix — include workflowStub count expectation
       integrationsRequested: intentResult.intent.integrations_requested,
       expectedWorkflowStubs: intentResult.intent.integrations_requested.length,
     });
@@ -101,9 +99,9 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       return;
     }
 
-    // Small delay to avoid rate limiting
+    // Delay to avoid rate limiting
     await new Promise((resolve) => setTimeout(resolve, 500));
-    
+
     // ── Stage 2: Schema Generation ──
     emit("stage_start", "schema_generation", {});
     updateStage(jobId, "schema_generation", {
@@ -132,7 +130,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
     }
 
     // Run repair if schema validation failed
-    let schemaRepairLog: ReturnType<typeof Array<unknown>> = [];
+    let schemaRepairLog: RepairAttempt[] = [];
     if (!schemaResult.validation.valid) {
       const repair = await runRepairEngine(
         "schema_generation",
@@ -157,7 +155,6 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       cost: schemaResult.cost,
     });
 
-    // Gap 1 fix — include repairLog in SSE event
     emit("stage_complete", "schema_generation", {
       entityCount: schemaResult.schema.entities.length,
       entities: schemaResult.schema.entities.map((e) => e.name),
@@ -175,7 +172,8 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       updateJobStatus(jobId, "failed");
       return;
     }
-    // Small delay to avoid rate limiting
+
+    // Delay to avoid rate limiting
     await new Promise((resolve) => setTimeout(resolve, 500));
 
     // ── Stage 3: AppSpec Generation ──
@@ -209,7 +207,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
     }
 
     // Run repair if appspec validation failed
-    let appSpecRepairLog: ReturnType<typeof Array<unknown>> = [];
+    let appSpecRepairLog: RepairAttempt[] = [];
     if (!appSpecResult.validation.valid) {
       const repair = await runRepairEngine(
         "appspec_generation",
@@ -235,8 +233,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       cost: appSpecResult.cost,
     });
 
-    // Gap 1 fix — include repairLog in SSE event
-    // Gap 2 fix — verify workflowStub count matches integrations_requested
+    // Gap 2 — verify workflowStub count matches integrations_requested
     const requestedIntegrations = intentResult.intent.integrations_requested;
     const producedStubs = appSpecResult.appSpec?.workflowStubs ?? [];
     const stubsPerIntegration = requestedIntegrations.map((integration) => ({
@@ -256,7 +253,6 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       retryCount: appSpecResult.retryCount,
       cost: appSpecResult.cost,
       repairLog: appSpecRepairLog,
-      // Gap 2 — workflow stub coverage report
       workflowCoverage: {
         requestedIntegrations,
         stubsPerIntegration,
@@ -274,13 +270,11 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       return;
     }
 
-    // ── Gap 2 fix — add missing workflowStubs programmatically ──
-    // If any requested integration has no stub, add a default one
+    // Gap 2 — add missing workflowStubs programmatically
     if (missingStubs.length > 0 && appSpecResult.appSpec) {
       const firstEntity = schemaResult.schema.entities[0]?.name ?? "Entity";
 
       for (const integration of missingStubs) {
-        // Map integration to its default action
         const defaultActions: Record<string, string> = {
           slack:         "send_channel_message",
           stripe:        "create_customer",
@@ -337,12 +331,19 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
       appSpecResult.cost,
     ].reduce((sum, c) => sum + c.latencyMs, 0);
 
+    // Set appSpec and cost BEFORE marking complete
+    // so any poll that arrives immediately after sees the full data
     job.appSpec = appSpecResult.appSpec;
+    job.repairLog = [];
     job.cost = {
       stages: [intentResult.cost, schemaResult.cost, appSpecResult.cost],
       totalEstimatedUSD: Math.round(totalUSD * 1_000_000) / 1_000_000,
       totalLatencyMs: totalLatency,
     };
+
+    // Small delay to ensure job store is fully updated before
+    // status changes to complete and frontend polls
+    await new Promise((resolve) => setTimeout(resolve, 200));
 
     updateJobStatus(jobId, "complete");
     emit("generation_complete", "appspec_generation", {
@@ -358,6 +359,8 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
     console.error("[pipeline] Unhandled error:", err);
   }
 }
+
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest): Promise<NextResponse> {
   try {
