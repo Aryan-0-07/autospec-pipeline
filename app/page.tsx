@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import type {
-  AppSpec, DataSchema, AppIntent, GenerationJob,
+  AppSpec, DataSchema, GenerationJob,
   SSEEvent, StageStatus, PipelineStage, IntegrationDefinition,
 } from "@/lib/types";
 
@@ -47,7 +47,9 @@ function StageRow({ info }: { info: StageInfo }) {
       </div>
       <div className="flex items-center gap-3 text-xs text-gray-500">
         {info.retryCount !== undefined && info.retryCount > 0 && (
-          <span className="text-yellow-500">{info.retryCount} retr{info.retryCount === 1 ? "y" : "ies"}</span>
+          <span className="text-yellow-500">
+            {info.retryCount} retr{info.retryCount === 1 ? "y" : "ies"}
+          </span>
         )}
         {info.latencyMs && <span>{fmt(info.latencyMs)}</span>}
       </div>
@@ -58,7 +60,9 @@ function StageRow({ info }: { info: StageInfo }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-6">
-      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">{title}</h3>
+      <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+        {title}
+      </h3>
       {children}
     </div>
   );
@@ -92,7 +96,7 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
       )}
 
       {/* Pages + Endpoints */}
-      <Section title={`Pages & API Endpoints`}>
+      <Section title="Pages & API Endpoints">
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left">
             <thead>
@@ -107,7 +111,9 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
             </thead>
             <tbody>
               {spec.pages.map((page) => {
-                const ep = spec.apiEndpoints.find((e) => e.boundEntity === page.boundEntity);
+                const ep = spec.apiEndpoints.find(
+                  (e) => e.boundEntity === page.boundEntity
+                );
                 return (
                   <tr key={page.name} className="border-b border-gray-800 hover:bg-gray-800/30">
                     <td className="py-2 pr-4 text-gray-200 font-medium">{page.name}</td>
@@ -116,9 +122,10 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
                     <td className="py-2 pr-4">
                       {ep && (
                         <span className={`font-mono font-bold ${
-                          ep.method === "GET" ? "text-green-400" :
-                          ep.method === "POST" ? "text-blue-400" :
-                          ep.method === "DELETE" ? "text-red-400" : "text-yellow-400"
+                          ep.method === "GET"    ? "text-green-400"  :
+                          ep.method === "POST"   ? "text-blue-400"   :
+                          ep.method === "DELETE" ? "text-red-400"    :
+                                                   "text-yellow-400"
                         }`}>{ep.method}</span>
                       )}
                     </td>
@@ -137,7 +144,9 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
         <div className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
           <div className="flex flex-wrap gap-2 mb-3">
             {spec.authRules.roles.map((r) => (
-              <span key={r} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">{r}</span>
+              <span key={r} className="text-xs bg-purple-500/20 text-purple-300 px-2 py-0.5 rounded-full">
+                {r}
+              </span>
             ))}
           </div>
           <div className="overflow-x-auto">
@@ -165,20 +174,25 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
         </div>
       </Section>
 
-      {/* Integration Hooks + Workflow Stubs */}
+      {/* Workflow Stubs */}
       {(spec.integrationHooks.length > 0 || spec.workflowStubs.length > 0) && (
         <Section title={`Workflows & Integrations (${spec.workflowStubs.length} stubs)`}>
           <div className="space-y-2">
             {spec.workflowStubs.map((stub, i) => (
               <div key={i} className="bg-gray-800/50 border border-gray-700 rounded-lg p-3">
                 <div className="flex items-center gap-2 mb-1">
-                  <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">{stub.integration}</span>
+                  <span className="text-xs bg-blue-500/20 text-blue-300 px-2 py-0.5 rounded">
+                    {stub.integration}
+                  </span>
                   <span className="text-xs text-gray-400">{stub.action}</span>
                 </div>
                 <p className="text-sm text-gray-200">{stub.name}</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Trigger: <span className="text-gray-400">{stub.trigger.entity}</span> → {stub.trigger.event}
-                  {stub.trigger.condition && <span className="text-yellow-500 ml-1">if {stub.trigger.condition}</span>}
+                  Trigger: <span className="text-gray-400">{stub.trigger.entity}</span>
+                  {" → "}{stub.trigger.event}
+                  {stub.trigger.condition && stub.trigger.condition.length > 0 && (
+                    <span className="text-yellow-500 ml-1">if {stub.trigger.condition}</span>
+                  )}
                 </p>
               </div>
             ))}
@@ -191,7 +205,7 @@ function AppSpecPanel({ spec, schema }: { spec: AppSpec; schema?: DataSchema }) 
 
 function IntegrationPanel({ integrations }: { integrations: IntegrationDefinition[] }) {
   const implemented = integrations.filter((i) => i.implemented);
-  const stubbed = integrations.filter((i) => !i.implemented);
+  const stubbed     = integrations.filter((i) => !i.implemented);
 
   return (
     <div className="space-y-4">
@@ -205,17 +219,23 @@ function IntegrationPanel({ integrations }: { integrations: IntegrationDefinitio
               </div>
               <div className="flex flex-wrap gap-1">
                 {i.actions.map((a) => (
-                  <span key={a.id} className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">{a.id}</span>
+                  <span key={a.id} className="text-xs bg-gray-700 text-gray-300 px-2 py-0.5 rounded">
+                    {a.id}
+                  </span>
                 ))}
               </div>
             </div>
           ))}
         </div>
       </Section>
+
       <Section title={`Stubbed (${stubbed.length})`}>
         <div className="space-y-1">
           {stubbed.map((i) => (
-            <div key={i.id} className="flex items-center justify-between px-3 py-2 bg-gray-800/30 border border-gray-700/50 rounded">
+            <div
+              key={i.id}
+              className="flex items-center justify-between px-3 py-2 bg-gray-800/30 border border-gray-700/50 rounded"
+            >
               <span className="text-sm text-gray-400">{i.displayName}</span>
               <span className="text-xs text-gray-600">{i.authType}</span>
             </div>
@@ -229,58 +249,65 @@ function IntegrationPanel({ integrations }: { integrations: IntegrationDefinitio
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function Home() {
-  const [prompt, setPrompt] = useState("");
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [job, setJob] = useState<GenerationJob | null>(null);
-  const [stages, setStages] = useState<StageInfo[]>([
+  const [prompt, setPrompt]       = useState("");
+  const [jobId, setJobId]         = useState<string | null>(null);
+  const [job, setJob]             = useState<GenerationJob | null>(null);
+  const [stages, setStages]       = useState<StageInfo[]>([
     { stage: "intent_extraction",  label: "Intent Extraction",  status: "pending" },
     { stage: "schema_generation",  label: "Schema Generation",  status: "pending" },
     { stage: "appspec_generation", label: "AppSpec Generation", status: "pending" },
   ]);
-  const [errors, setErrors] = useState<{ stage: string; messages: string[] }[]>([]);
+  const [errors, setErrors]           = useState<{ stage: string; messages: string[] }[]>([]);
   const [integrations, setIntegrations] = useState<IntegrationDefinition[]>([]);
-  const [activeTab, setActiveTab] = useState<"appspec" | "integrations">("appspec");
-  const [loading, setLoading] = useState(false);
-  const [statusMsg, setStatusMsg] = useState("");
-  const eventSourceRef = useRef<EventSource | null>(null);
+  const [activeTab, setActiveTab]     = useState<"appspec" | "integrations">("appspec");
+  const [loading, setLoading]         = useState(false);
+  const [statusMsg, setStatusMsg]     = useState("");
+  const eventSourceRef                = useRef<EventSource | null>(null);
 
   // Load integration registry on mount
   useEffect(() => {
     fetch("/api/integrations")
       .then((r) => r.json())
-      .then(setIntegrations)
+      .then((data: IntegrationDefinition[]) => setIntegrations(data))
       .catch(console.error);
   }, []);
 
-  // Poll job status until complete
+  // Poll job status until appSpec is present
   useEffect(() => {
     if (!jobId) return;
     let attempts = 0;
-    const maxAttempts = 30; // 60 seconds max
+    const maxAttempts = 60; // 120 seconds max at 1 poll/2s
 
     const interval = setInterval(async () => {
       attempts++;
       try {
-        const res = await fetch(`/api/generate/${jobId}`);
+        const res  = await fetch(`/api/generate/${jobId}`);
         const data = await res.json() as GenerationJob;
 
-        if (data.status === "complete") {
-          // Keep polling until appSpec is actually present
-          if (data.appSpec) {
-            setJob(data);
-            clearInterval(interval);
-          } else if (attempts >= maxAttempts) {
-            // Give up after 60 seconds
-            setJob(data);
-            clearInterval(interval);
-          }
-          // Otherwise keep polling — appSpec not ready yet
-        } else if (data.status === "failed") {
+        // Only stop when complete AND appSpec is present
+        if (data.status === "complete" && data.appSpec) {
           setJob(data);
           clearInterval(interval);
-        } else if (attempts >= maxAttempts) {
+          return;
+        }
+
+        if (data.status === "failed") {
+          setJob(data);
+          clearInterval(interval);
+          return;
+        }
+
+        // Complete but no appSpec yet — keep polling
+        if (data.status === "complete" && !data.appSpec) {
+          console.log("[poll] complete but appSpec not ready yet, retrying...");
+        }
+
+        // Give up after maxAttempts
+        if (attempts >= maxAttempts) {
+          setJob(data);
           clearInterval(interval);
         }
+
       } catch (err) {
         console.error("Poll error:", err);
       }
@@ -307,26 +334,28 @@ export default function Home() {
 
   async function handleSubmit() {
     if (!prompt.trim() || loading) return;
+
     setLoading(true);
     setStatusMsg("Starting pipeline...");
     setJobId(null);
     resetStages();
 
-    // Close any existing SSE connection
     eventSourceRef.current?.close();
 
     try {
-      const res = await fetch("/api/generate", {
-        method: "POST",
+      const res  = await fetch("/api/generate", {
+        method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: prompt.trim() }),
+        body:    JSON.stringify({ prompt: prompt.trim() }),
       });
       const data = await res.json() as { jobId: string };
-      setJobId(data.jobId);
+      const currentJobId = data.jobId;
+
+      setJobId(currentJobId);
       setStatusMsg("Pipeline running...");
 
       // Connect SSE stream
-      const es = new EventSource(`/api/generate/${data.jobId}/stream`);
+      const es = new EventSource(`/api/generate/${currentJobId}/stream`);
       eventSourceRef.current = es;
 
       es.onmessage = (e) => {
@@ -339,16 +368,18 @@ export default function Home() {
 
         if (event.type === "stage_complete") {
           updateStageInfo(stage, {
-            status: "complete",
-            latencyMs: (event.data.cost as { latencyMs?: number })?.latencyMs,
+            status:    "complete",
+            latencyMs: (event.data.cost as { latencyMs?: number } | undefined)?.latencyMs,
             retryCount: event.data.retryCount as number | undefined,
           });
         }
 
         if (event.type === "stage_failed") {
           updateStageInfo(stage, { status: "failed" });
-          const errs = (event.data.errors as Array<{ message: string }> | undefined)
-            ?.map((e) => e.message) ?? [event.data.error as string ?? "Unknown error"];
+          const errs =
+            (event.data.errors as Array<{ message: string }> | undefined)
+              ?.map((e) => e.message) ??
+            [event.data.error as string ?? "Unknown error"];
           setErrors((prev) => [...prev, { stage, messages: errs }]);
         }
 
@@ -356,12 +387,25 @@ export default function Home() {
           setStatusMsg("Generation complete");
           setLoading(false);
           es.close();
+
+          // Immediately fetch final job data — don't wait for poll interval
+          setTimeout(async () => {
+            try {
+              const finalRes = await fetch(`/api/generate/${currentJobId}`);
+              const finalJob = await finalRes.json() as GenerationJob;
+              if (finalJob.appSpec) {
+                setJob(finalJob);
+              }
+            } catch (err) {
+              console.error("Final fetch error:", err);
+            }
+          }, 500);
         }
       };
 
       es.onerror = () => {
         setLoading(false);
-        setStatusMsg("Stream disconnected");
+        setStatusMsg("Stream disconnected — results will appear shortly");
         es.close();
       };
 
@@ -371,7 +415,7 @@ export default function Home() {
     }
   }
 
-  const schema = job?.stages?.schema_generation?.output as DataSchema | undefined;
+  const schema  = job?.stages?.schema_generation?.output as DataSchema | undefined;
   const appSpec = job?.appSpec;
 
   return (
@@ -386,7 +430,7 @@ export default function Home() {
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
-          {/* Left column — input + stages + errors */}
+          {/* Left column */}
           <div className="lg:col-span-1 space-y-4">
 
             {/* Prompt input */}
@@ -416,7 +460,9 @@ export default function Home() {
 
             {/* Stage progress */}
             <div className="bg-gray-900 border border-gray-700 rounded-xl p-4">
-              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Pipeline Stages</h2>
+              <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">
+                Pipeline Stages
+              </h2>
               <div className="space-y-2">
                 {stages.map((s) => <StageRow key={s.stage} info={s} />)}
               </div>
@@ -439,13 +485,17 @@ export default function Home() {
             {/* Error panel */}
             {errors.length > 0 && (
               <div className="bg-gray-900 border border-red-900/50 rounded-xl p-4">
-                <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3">Validation Errors</h2>
+                <h2 className="text-xs font-semibold text-red-400 uppercase tracking-wider mb-3">
+                  Validation Errors
+                </h2>
                 <div className="space-y-3">
                   {errors.map((e, i) => (
                     <div key={i}>
                       <p className="text-xs font-semibold text-gray-400 mb-1">{e.stage}</p>
                       {e.messages.map((m, j) => (
-                        <p key={j} className="text-xs text-red-300 bg-red-900/20 rounded px-2 py-1 mb-1">{m}</p>
+                        <p key={j} className="text-xs text-red-300 bg-red-900/20 rounded px-2 py-1 mb-1">
+                          {m}
+                        </p>
                       ))}
                     </div>
                   ))}
@@ -457,7 +507,11 @@ export default function Home() {
                     <p className="text-xs font-semibold text-gray-400 mb-2">Repair Log</p>
                     {job.repairLog.map((r, i) => (
                       <div key={i} className="text-xs mb-1">
-                        <span className={`font-semibold ${r.outcome === "repaired" ? "text-green-400" : r.outcome === "escalated" ? "text-yellow-400" : "text-red-400"}`}>
+                        <span className={`font-semibold ${
+                          r.outcome === "repaired"  ? "text-green-400"  :
+                          r.outcome === "escalated" ? "text-yellow-400" :
+                                                      "text-red-400"
+                        }`}>
                           [{r.strategy}] {r.outcome}
                         </span>
                         <span className="text-gray-500 ml-2">{r.detail}</span>
@@ -469,7 +523,7 @@ export default function Home() {
             )}
           </div>
 
-          {/* Right column — AppSpec + integrations */}
+          {/* Right column */}
           <div className="lg:col-span-2">
             <div className="bg-gray-900 border border-gray-700 rounded-xl p-4">
 
@@ -477,35 +531,57 @@ export default function Home() {
               <div className="flex gap-2 mb-4 border-b border-gray-700 pb-3">
                 <button
                   onClick={() => setActiveTab("appspec")}
-                  className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${activeTab === "appspec" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-gray-200"}`}
+                  className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${
+                    activeTab === "appspec"
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
                 >
                   AppSpec Output
                 </button>
                 <button
                   onClick={() => setActiveTab("integrations")}
-                  className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${activeTab === "integrations" ? "bg-blue-600 text-white" : "text-gray-400 hover:text-gray-200"}`}
+                  className={`text-sm font-medium px-3 py-1 rounded-lg transition-colors ${
+                    activeTab === "integrations"
+                      ? "bg-blue-600 text-white"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
                 >
                   Integration Registry
-                  <span className="ml-1 text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">{integrations.length}</span>
+                  <span className="ml-1 text-xs bg-gray-700 text-gray-400 px-1.5 py-0.5 rounded-full">
+                    {integrations.length}
+                  </span>
                 </button>
               </div>
 
               {activeTab === "appspec" && (
-                appSpec
-                  ? <AppSpecPanel spec={appSpec} schema={schema} />
-                  : (
-                    <div className="flex flex-col items-center justify-center py-16 text-center">
-                      <div className="text-4xl mb-3">⚙️</div>
-                      <p className="text-gray-500 text-sm">Submit a prompt to generate an AppSpec</p>
-                      <p className="text-gray-600 text-xs mt-1">Results will appear here in real time</p>
-                    </div>
-                  )
+                appSpec ? (
+                  <AppSpecPanel spec={appSpec} schema={schema} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-16 text-center">
+                    <div className="text-4xl mb-3">⚙️</div>
+                    <p className="text-gray-500 text-sm">
+                      {loading
+                        ? "Generating your AppSpec..."
+                        : "Submit a prompt to generate an AppSpec"}
+                    </p>
+                    <p className="text-gray-600 text-xs mt-1">
+                      {loading
+                        ? "Results will appear here when complete"
+                        : "Results will appear here in real time"}
+                    </p>
+                  </div>
+                )
               )}
 
               {activeTab === "integrations" && (
-                integrations.length > 0
-                  ? <IntegrationPanel integrations={integrations} />
-                  : <p className="text-gray-500 text-sm text-center py-8">Loading integrations...</p>
+                integrations.length > 0 ? (
+                  <IntegrationPanel integrations={integrations} />
+                ) : (
+                  <p className="text-gray-500 text-sm text-center py-8">
+                    Loading integrations...
+                  </p>
+                )
               )}
             </div>
           </div>
