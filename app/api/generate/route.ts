@@ -305,6 +305,7 @@ async function runPipeline(jobId: string, prompt: string): Promise<void> {
           trigger: {
             entity: firstEntity,
             event: "status_changed",
+            condition: "",
           },
           integration,
           action,

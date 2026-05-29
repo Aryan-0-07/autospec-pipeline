@@ -156,8 +156,10 @@ export const IntegrationHookSchema = z.object({
 });
 
 export const WorkflowPayloadFieldSchema = z.object({
-  sourceField: z.string().min(1),
-  targetParam: z.string().min(1),
+  sourceField: z.string().min(1).optional().nullable()
+    .transform((v) => (typeof v === "string" && v.trim().length > 0 ? v : "id")),
+  targetParam: z.string().min(1).optional().nullable()
+    .transform((v) => (typeof v === "string" && v.trim().length > 0 ? v : "recordId")),
 });
 
 export const WorkflowStubSchema = z.object({

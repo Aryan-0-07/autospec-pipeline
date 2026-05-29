@@ -78,12 +78,14 @@ Return this exact JSON structure with ALL fields filled:
       "name": "Notify on record created",
       "trigger": {
         "entity": "${limitedEntities[0]?.name ?? "Entity"}",
-        "event": "created"
+        "event": "created",
+        "condition": ""
       },
       "integration": "webhook",
       "action": "post_payload",
       "payload": [
-        { "sourceField": "id", "targetParam": "recordId" }
+        { "sourceField": "id", "targetParam": "recordId" },
+        { "sourceField": "status", "targetParam": "status" }
       ]
     }
   ]
@@ -101,7 +103,9 @@ STRICT RULES:
 9. Every page MUST have a matching apiEndpoint with the same boundEntity
 10. Only use these entity names: ${entityNames}
 11. Maximum 4 pages and 6 endpoints total
-12. Return ONLY the JSON object, no explanation`;
+12. "condition" must always be a string — use "" if no condition
+13. payload items must use exactly "sourceField" and "targetParam" as key names
+14. Return ONLY the JSON object, no explanation`;
 }
 
 const VALID_LAYOUTS = ["list", "detail", "dashboard", "settings"];
@@ -169,19 +173,8 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
     const name = String(page.name ?? "page");
 
     let route = page.route;
-    if (
-      typeof route !== "string" ||
-      !route.startsWith("/") ||
-      route === "/page" ||
-      route === "/pages" ||
-      route.trim() === "/"
-    ) {
-      const entitySlug = (
-        typeof page.boundEntity === "string" && page.boundEntity.trim().length > 0
-          ? page.boundEntity
-          : name
-      ).toLowerCase().replace(/\s+/g, "-");
-      route = `/${entitySlug}s`;
+    if (typeof route !== "string" || !route.startsWith("/")) {
+      route = `/${name.toLowerCase().replace(/\s+/g, "-")}`;
     }
 
     let layout = page.layout;
@@ -251,7 +244,7 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       if (!VALID_EVENTS.includes(hook.triggerEvent as string)) {
         hook.triggerEvent = "created";
       }
-      // Ensure condition is always a string, never undefined
+      // Ensure condition is always a string never undefined
       if (typeof hook.condition !== "string") {
         hook.condition = "";
       }
@@ -274,16 +267,43 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       if (!Array.isArray(stub.payload)) {
         stub.payload = [];
       }
-      // Fix each payload field
-      stub.payload = (stub.payload as Record<string, unknown>[]).map((p) => ({
-        sourceField: typeof p.sourceField === "string" && p.sourceField.trim().length > 0
-          ? p.sourceField : "id",
-        targetParam: typeof p.targetParam === "string" && p.targetParam.trim().length > 0
-          ? p.targetParam : "recordId",
-      }));
+
+      // Fix each payload field — handle all possible key names AI might return
+      stub.payload = (stub.payload as Record<string, unknown>[]).map((p) => {
+        // AI sometimes returns "field", "source", "from" instead of "sourceField"
+        const sourceField =
+          typeof p.sourceField === "string" && p.sourceField.trim().length > 0
+            ? p.sourceField
+            : typeof p.field === "string" && (p.field as string).trim().length > 0
+            ? p.field as string
+            : typeof p.source === "string" && (p.source as string).trim().length > 0
+            ? p.source as string
+            : typeof p.from === "string" && (p.from as string).trim().length > 0
+            ? p.from as string
+            : "id";
+
+        // AI sometimes returns "param", "target", "to" instead of "targetParam"
+        const targetParam =
+          typeof p.targetParam === "string" && p.targetParam.trim().length > 0
+            ? p.targetParam
+            : typeof p.param === "string" && (p.param as string).trim().length > 0
+            ? p.param as string
+            : typeof p.target === "string" && (p.target as string).trim().length > 0
+            ? p.target as string
+            : typeof p.to === "string" && (p.to as string).trim().length > 0
+            ? p.to as string
+            : "recordId";
+
+        return { sourceField, targetParam };
+      });
+
+      // If payload empty after fixing add a default entry
+      if ((stub.payload as unknown[]).length === 0) {
+        stub.payload = [{ sourceField: "id", targetParam: "recordId" }];
+      }
 
       if (!stub.trigger || typeof stub.trigger !== "object") {
-        stub.trigger = { entity: firstEntity, event: "created" };
+        stub.trigger = { entity: firstEntity, event: "created", condition: "" };
       }
       const trigger = stub.trigger as Record<string, unknown>;
       if (typeof trigger.entity !== "string" || trigger.entity.trim().length === 0) {
@@ -295,7 +315,7 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
       if (!VALID_EVENTS.includes(trigger.event as string)) {
         trigger.event = "created";
       }
-      // Ensure condition is always a string, never undefined
+      // Ensure condition is always a string never undefined
       if (typeof trigger.condition !== "string") {
         trigger.condition = "";
       }
@@ -325,6 +345,43 @@ function sanitizeAppSpec(parsed: unknown, schema: DataSchema): unknown {
     }];
   }
 
+  // ── Nuclear fallback ──
+  // Final pass — strip any remaining undefined fields in workflowStubs
+  spec.workflowStubs = (spec.workflowStubs as Record<string, unknown>[]).map((stub) => {
+    if (Array.isArray(stub.payload)) {
+      stub.payload = (stub.payload as Record<string, unknown>[])
+        .map((p) => ({
+          sourceField: typeof p.sourceField === "string" && p.sourceField.length > 0
+            ? p.sourceField : "id",
+          targetParam: typeof p.targetParam === "string" && p.targetParam.length > 0
+            ? p.targetParam : "recordId",
+        }));
+      if ((stub.payload as unknown[]).length === 0) {
+        stub.payload = [{ sourceField: "id", targetParam: "recordId" }];
+      }
+    } else {
+      stub.payload = [{ sourceField: "id", targetParam: "recordId" }];
+    }
+
+    // Ensure trigger.condition is always a string
+    if (stub.trigger && typeof stub.trigger === "object") {
+      const trigger = stub.trigger as Record<string, unknown>;
+      if (typeof trigger.condition !== "string") {
+        trigger.condition = "";
+      }
+    }
+
+    return stub;
+  });
+
+  // Final pass — strip any remaining undefined condition in integrationHooks
+  spec.integrationHooks = (spec.integrationHooks as Record<string, unknown>[]).map((hook) => {
+    if (typeof hook.condition !== "string") {
+      hook.condition = "";
+    }
+    return hook;
+  });
+
   return spec;
 }
 
@@ -342,7 +399,11 @@ export async function runAppSpecGeneration(
   let lastCost: StageCost | null = null;
 
   try {
-    const { response, cost } = await callModel(STAGE, buildPrompt(schema, intent), { ...options, systemPrompt: SYSTEM_PROMPT });
+    const { response, cost } = await callModel(
+      STAGE,
+      buildPrompt(schema, intent),
+      { ...options, systemPrompt: SYSTEM_PROMPT }
+    );
     lastCost = cost;
 
     let parsed: unknown;
@@ -362,12 +423,41 @@ export async function runAppSpecGeneration(
     parsed = sanitizeAppSpec(parsed, schema);
 
     let validation = validateAppSpec(parsed, schema);
-    if (validation.valid) return { appSpec: parsed as AppSpec, validation, cost: lastCost, retryCount };
+    if (validation.valid) {
+      return {
+        appSpec: parsed as AppSpec,
+        validation,
+        cost: lastCost,
+        retryCount,
+      };
+    }
 
+    // Targeted fix retry
     retryCount++;
     const entityNameList = schema.entities.slice(0, 4).map((e) => e.name).join(", ");
-    const validationErrors = validation.errors.map((e) => `- ${e.field}: ${e.message}`).join("\n");
-    const fixPrompt = `Your AppSpec had these errors:\n${validationErrors}\n\nFix ALL errors. Only use these entities: ${entityNameList}.\n\nRules:\n- route must start with "/"\n- layout must be one of: list | detail | dashboard | settings\n- components must be a non-empty array like ["table"]\n- method must be one of: GET | POST | PUT | PATCH | DELETE\n- permissions must be nested object: { "admin": { "EntityName": ["read","write","delete"] } }\n- integrationHooks and workflowStubs must be arrays\n- triggerEvent must be one of: created | updated | deleted | status_changed\n- Every page needs a matching API endpoint\n- Maximum 4 pages, 6 endpoints\n\nReturn ONLY the corrected JSON object.`;
+    const validationErrors = validation.errors
+      .map((e) => `- ${e.field}: ${e.message}`)
+      .join("\n");
+
+    const fixPrompt = `Your AppSpec had these errors:
+${validationErrors}
+
+Fix ALL errors. Only use these entities: ${entityNameList}.
+
+Rules:
+- route must start with "/"
+- layout must be one of: list | detail | dashboard | settings
+- components must be a non-empty array like ["table"]
+- method must be one of: GET | POST | PUT | PATCH | DELETE
+- permissions must be nested object: { "admin": { "EntityName": ["read","write","delete"] } }
+- integrationHooks and workflowStubs must be arrays
+- triggerEvent must be one of: created | updated | deleted | status_changed
+- Every page needs a matching API endpoint
+- condition must always be a string use "" if empty
+- payload items must use exactly "sourceField" and "targetParam" as key names
+- Maximum 4 pages 6 endpoints
+
+Return ONLY the corrected JSON object.`;
 
     const { response: fixResponse, cost: fixCost } = await callModel(
       STAGE,
@@ -378,11 +468,19 @@ export async function runAppSpecGeneration(
 
     const fixed = sanitizeAppSpec(parseJSON(fixResponse.content), schema);
     validation = validateAppSpec(fixed, schema);
-    return { appSpec: fixed as AppSpec, validation, cost: lastCost, retryCount };
+
+    return {
+      appSpec: fixed as AppSpec,
+      validation,
+      cost: lastCost,
+      retryCount,
+    };
 
   } catch (error) {
     throw new Error(
-      `[appspec_generation] Stage failed after ${retryCount} retries: ${error instanceof Error ? error.message : String(error)}`
+      `[appspec_generation] Stage failed after ${retryCount} retries: ${
+        error instanceof Error ? error.message : String(error)
+      }`
     );
   }
 }
