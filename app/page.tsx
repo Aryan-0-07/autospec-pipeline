@@ -424,7 +424,7 @@ export default function Home() {
 
         {/* Header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-white">OneAtlas Pipeline</h1>
+          <h1 className="text-2xl font-bold text-white">AutoSpec Pipeline</h1>
           <p className="text-sm text-gray-500 mt-1">Natural language → validated AppSpec</p>
         </div>
 

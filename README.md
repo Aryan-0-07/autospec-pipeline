@@ -9,8 +9,8 @@ A multi-stage AI generation pipeline that converts a natural language app descri
 
 ### 1. Clone the repo
 ```bash
-git clone https://github.com/YOUR_USERNAME/oneatlas-pipeline.git
-cd oneatlas-pipeline
+git clone https://github.com/YOUR_USERNAME/autospec-pipeline.git
+cd autospec-pipeline
 ```
 
 ### 2. Install dependencies
