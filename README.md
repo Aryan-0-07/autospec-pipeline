@@ -1,4 +1,4 @@
-# OneAtlas Pipeline
+# Autospec Pipeline
 **Live URL:** https://autospec-pipeline.vercel.app/
 
 A multi-stage AI generation pipeline that converts a natural language app description into a validated, machine-readable AppSpec object.
